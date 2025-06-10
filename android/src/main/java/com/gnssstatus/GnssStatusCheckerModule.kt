@@ -1,0 +1,284 @@
+package com.gnssstatus
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.GnssMeasurementsEvent
+import android.location.GnssStatus
+import android.location.LocationManager
+import android.os.Build
+import androidx.core.app.ActivityCompat
+import com.facebook.react.bridge.*
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.util.*
+import kotlin.collections.HashSet
+import kotlin.math.abs
+
+class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+
+    private val locationManager: LocationManager by lazy {
+        reactApplicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    }
+
+    private var gnssStatusCallback: GnssStatus.Callback? = null
+    private var gnssMeasurementsCallback: GnssMeasurementsEvent.Callback? = null
+    
+    // Track current GNSS data
+    private var currentSatelliteCount = 0
+    private val supportedConstellations = HashSet<Int>()
+    private val detectedFrequencies = HashSet<Double>()
+    
+    companion object {
+        const val NAME = "GnssStatusChecker"
+        
+        // Constellation constants matching Android's GnssStatus
+        const val CONSTELLATION_UNKNOWN = 0
+        const val CONSTELLATION_GPS = 1
+        const val CONSTELLATION_SBAS = 2
+        const val CONSTELLATION_GLONASS = 3
+        const val CONSTELLATION_QZSS = 4
+        const val CONSTELLATION_BEIDOU = 5
+        const val CONSTELLATION_GALILEO = 6
+        const val CONSTELLATION_IRNSS = 7 // NavIC
+        
+        // Carrier frequency ranges (MHz)
+        const val GPS_L1_FREQ = 1575.42
+        const val GPS_L5_FREQ = 1176.45
+        const val FREQ_TOLERANCE = 10.0 // MHz tolerance for frequency detection
+    }
+
+    override fun getName(): String {
+        return NAME
+    }
+
+    override fun getConstants(): MutableMap<String, Any> {
+        return hashMapOf(
+            "CONSTELLATION_UNKNOWN" to CONSTELLATION_UNKNOWN,
+            "CONSTELLATION_GPS" to CONSTELLATION_GPS,
+            "CONSTELLATION_SBAS" to CONSTELLATION_SBAS,
+            "CONSTELLATION_GLONASS" to CONSTELLATION_GLONASS,
+            "CONSTELLATION_QZSS" to CONSTELLATION_QZSS,
+            "CONSTELLATION_BEIDOU" to CONSTELLATION_BEIDOU,
+            "CONSTELLATION_GALILEO" to CONSTELLATION_GALILEO,
+            "CONSTELLATION_IRNSS" to CONSTELLATION_IRNSS
+        )
+    }
+
+    @ReactMethod
+    fun getGNSSStatus(promise: Promise) {
+        try {
+            if (!hasLocationPermission()) {
+                promise.reject("PERMISSION_DENIED", "Location permission is required")
+                return
+            }
+
+            val result = WritableNativeMap()
+            
+            // Check if GNSS is supported
+            val isGNSSSupported = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            result.putBoolean("isGNSSSupported", isGNSSSupported)
+            
+            // Check if device supports GNSS measurements (API 24+)
+            val supportsMeasurements = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+            
+            // Current satellite count
+            result.putInt("satellitesVisible", currentSatelliteCount)
+            
+            // Supported constellations
+            val constellationArray = WritableNativeArray()
+            supportedConstellations.forEach { constellation ->
+                constellationArray.pushString(getConstellationName(constellation))
+            }
+            result.putArray("supportedConstellations", constellationArray)
+            
+            // Detected carrier frequencies
+            val frequencyArray = WritableNativeArray()
+            detectedFrequencies.forEach { frequency ->
+                frequencyArray.pushDouble(frequency)
+            }
+            result.putArray("carrierFrequencies", frequencyArray)
+            
+            // Check for dual-frequency support (L5 band ~1176 MHz)
+            val isDualFrequencySupported = detectedFrequencies.any { freq ->
+                abs(freq - GPS_L5_FREQ) <= FREQ_TOLERANCE
+            }
+            result.putBoolean("isDualFrequencySupported", isDualFrequencySupported)
+            
+            // Check for NavIC support (IRNSS constellation)
+            val isNavICSupported = supportedConstellations.contains(CONSTELLATION_IRNSS)
+            result.putBoolean("isNavICSupported", isNavICSupported)
+            
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("GNSS_ERROR", "Failed to get GNSS status: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun startListening(promise: Promise) {
+        try {
+            if (!hasLocationPermission()) {
+                promise.reject("PERMISSION_DENIED", "Location permission is required")
+                return
+            }
+
+            // Start GNSS status monitoring
+            if (gnssStatusCallback == null) {
+                gnssStatusCallback = object : GnssStatus.Callback() {
+                    override fun onSatelliteStatusChanged(status: GnssStatus) {
+                        super.onSatelliteStatusChanged(status)
+                        updateSatelliteStatus(status)
+                    }
+
+                    override fun onStarted() {
+                        super.onStarted()
+                        sendEvent("onGnssStarted", null)
+                    }
+
+                    override fun onStopped() {
+                        super.onStopped()
+                        sendEvent("onGnssStopped", null)
+                    }
+                }
+                
+                locationManager.registerGnssStatusCallback(gnssStatusCallback!!, null)
+            }
+
+            // Start GNSS measurements monitoring (API 24+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && gnssMeasurementsCallback == null) {
+                gnssMeasurementsCallback = object : GnssMeasurementsEvent.Callback() {
+                    override fun onGnssMeasurementsReceived(event: GnssMeasurementsEvent) {
+                        super.onGnssMeasurementsReceived(event)
+                        updateMeasurements(event)
+                    }
+
+                    override fun onStatusChanged(status: Int) {
+                        super.onStatusChanged(status)
+                        sendEvent("onMeasurementStatusChanged", Arguments.createMap().apply {
+                            putInt("status", status)
+                        })
+                    }
+                }
+                
+                locationManager.registerGnssMeasurementsCallback(gnssMeasurementsCallback!!, null)
+            }
+            
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("START_LISTENING_ERROR", "Failed to start listening: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun stopListening(promise: Promise) {
+        try {
+            gnssStatusCallback?.let {
+                locationManager.unregisterGnssStatusCallback(it)
+                gnssStatusCallback = null
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                gnssMeasurementsCallback?.let {
+                    locationManager.unregisterGnssMeasurementsCallback(it)
+                    gnssMeasurementsCallback = null
+                }
+            }
+            
+            // Clear cached data
+            supportedConstellations.clear()
+            detectedFrequencies.clear()
+            currentSatelliteCount = 0
+            
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("STOP_LISTENING_ERROR", "Failed to stop listening: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun getConstantExample(): Double {
+        return GPS_L5_FREQ
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        return ActivityCompat.checkSelfPermission(
+            reactApplicationContext,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun updateSatelliteStatus(status: GnssStatus) {
+        currentSatelliteCount = status.satelliteCount
+        supportedConstellations.clear()
+        
+        for (i in 0 until status.satelliteCount) {
+            val constellation = status.getConstellationType(i)
+            supportedConstellations.add(constellation)
+        }
+        
+        // Send updated status via event
+        val eventData = WritableNativeMap().apply {
+            putInt("satellitesVisible", currentSatelliteCount)
+            
+            val constellationArray = WritableNativeArray()
+            supportedConstellations.forEach { constellation ->
+                constellationArray.pushString(getConstellationName(constellation))
+            }
+            putArray("supportedConstellations", constellationArray)
+            putBoolean("isNavICSupported", supportedConstellations.contains(CONSTELLATION_IRNSS))
+        }
+        
+        sendEvent("onSatelliteStatusChanged", eventData)
+    }
+
+    private fun updateMeasurements(event: GnssMeasurementsEvent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            detectedFrequencies.clear()
+            
+            event.measurements.forEach { measurement ->
+                // Get carrier frequency if available (API 26+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (measurement.hasCarrierFrequencyHz()) {
+                        val frequencyMHz = measurement.carrierFrequencyHz / 1e6
+                        detectedFrequencies.add(frequencyMHz)
+                    }
+                }
+            }
+            
+            // Send updated measurements via event
+            val eventData = WritableNativeMap().apply {
+                val frequencyArray = WritableNativeArray()
+                detectedFrequencies.forEach { frequency ->
+                    frequencyArray.pushDouble(frequency)
+                }
+                putArray("carrierFrequencies", frequencyArray)
+                
+                val isDualFrequencySupported = detectedFrequencies.any { freq ->
+                    abs(freq - GPS_L5_FREQ) <= FREQ_TOLERANCE
+                }
+                putBoolean("isDualFrequencySupported", isDualFrequencySupported)
+            }
+            
+            sendEvent("onMeasurementsChanged", eventData)
+        }
+    }
+
+    private fun getConstellationName(constellation: Int): String {
+        return when (constellation) {
+            CONSTELLATION_GPS -> "GPS"
+            CONSTELLATION_SBAS -> "SBAS"
+            CONSTELLATION_GLONASS -> "GLONASS"
+            CONSTELLATION_QZSS -> "QZSS"
+            CONSTELLATION_BEIDOU -> "BEIDOU"
+            CONSTELLATION_GALILEO -> "GALILEO"
+            CONSTELLATION_IRNSS -> "IRNSS" // NavIC
+            else -> "UNKNOWN"
+        }
+    }
+
+    private fun sendEvent(eventName: String, params: WritableMap?) {
+        reactApplicationContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit(eventName, params)
+    }
+} 
