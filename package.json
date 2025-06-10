@@ -39,13 +39,13 @@
     "dual-frequency",
     "location"
   ],
-  "repository": "https://github.com/your-username/react-native-gnss-status-checker",
-  "author": "Your Name <your.email@example.com> (https://github.com/your-username)",
+  "repository": "https://github.com/vijayanandof/react-native-gnss-status-checker",
+  "author": "Your Name <your.email@example.com> (https://github.com/vijayanandof)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/your-username/react-native-gnss-status-checker/issues"
+    "url": "https://github.com/vijayanandof/react-native-gnss-status-checker/issues"
   },
-  "homepage": "https://github.com/your-username/react-native-gnss-status-checker#readme",
+  "homepage": "https://github.com/vijayanandof/react-native-gnss-status-checker#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
