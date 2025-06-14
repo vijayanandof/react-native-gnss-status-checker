@@ -13,6 +13,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.util.*
 import kotlin.collections.HashSet
 import kotlin.math.abs
+import java.lang.reflect.Method
 
 class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
@@ -29,8 +30,93 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
     private var averageSignalToNoiseRatio = 0.0
     private val supportedConstellations = HashSet<Int>()
     private val detectedFrequencies = HashSet<Double>()
-    private val satelliteDetails = mutableListOf<WritableMap>()
+    // Store satellite data as simple data classes instead of WritableMap
+    private val satelliteDataList = mutableListOf<SatelliteData>()
     
+    // Cache reflection methods for better performance
+    private var hasCn0DbHzMethod: Method? = null
+    private var getCn0DbHzMethod: Method? = null
+    private var hasElevationDegreesMethod: Method? = null
+    private var getElevationDegreesMethod: Method? = null
+    private var hasAzimuthDegreesMethod: Method? = null
+    private var getAzimuthDegreesMethod: Method? = null
+    
+    // Data class to store satellite information
+    data class SatelliteData(
+        val svid: Int,
+        val constellationType: Int,
+        val constellationName: String,
+        val hasEphemeris: Boolean,
+        val hasAlmanac: Boolean,
+        val usedInFix: Boolean,
+        val cn0DbHz: Float?,
+        val elevation: Float?,
+        val azimuth: Float?,
+        val carrierFrequencyHz: Double?
+    )
+    
+    init {
+        // Initialize reflection methods
+        try {
+            hasCn0DbHzMethod = GnssStatus::class.java.getMethod("hasCn0DbHz", Int::class.javaPrimitiveType)
+            getCn0DbHzMethod = GnssStatus::class.java.getMethod("getCn0DbHz", Int::class.javaPrimitiveType)
+            hasElevationDegreesMethod = GnssStatus::class.java.getMethod("hasElevationDegrees", Int::class.javaPrimitiveType)
+            getElevationDegreesMethod = GnssStatus::class.java.getMethod("getElevationDegrees", Int::class.javaPrimitiveType)
+            hasAzimuthDegreesMethod = GnssStatus::class.java.getMethod("hasAzimuthDegrees", Int::class.javaPrimitiveType)
+            getAzimuthDegreesMethod = GnssStatus::class.java.getMethod("getAzimuthDegrees", Int::class.javaPrimitiveType)
+        } catch (e: NoSuchMethodException) {
+            // Methods not available in this API level
+        }
+    }
+    
+    private fun safeHasCn0DbHz(status: GnssStatus, index: Int): Boolean {
+        return try {
+            hasCn0DbHzMethod?.invoke(status, index) as? Boolean ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun safeGetCn0DbHz(status: GnssStatus, index: Int): Float {
+        return try {
+            getCn0DbHzMethod?.invoke(status, index) as? Float ?: 0f
+        } catch (e: Exception) {
+            0f
+        }
+    }
+    
+    private fun safeHasElevationDegrees(status: GnssStatus, index: Int): Boolean {
+        return try {
+            hasElevationDegreesMethod?.invoke(status, index) as? Boolean ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun safeGetElevationDegrees(status: GnssStatus, index: Int): Float {
+        return try {
+            getElevationDegreesMethod?.invoke(status, index) as? Float ?: 0f
+        } catch (e: Exception) {
+            0f
+        }
+    }
+    
+    private fun safeHasAzimuthDegrees(status: GnssStatus, index: Int): Boolean {
+        return try {
+            hasAzimuthDegreesMethod?.invoke(status, index) as? Boolean ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun safeGetAzimuthDegrees(status: GnssStatus, index: Int): Float {
+        return try {
+            getAzimuthDegreesMethod?.invoke(status, index) as? Float ?: 0f
+        } catch (e: Exception) {
+            0f
+        }
+    }
+
     companion object {
         const val NAME = "GnssStatusChecker"
         
@@ -101,9 +187,6 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             val isGNSSSupported = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
             result.putBoolean("isGNSSSupported", isGNSSSupported)
             
-            // Check if device supports GNSS measurements (API 24+)
-            val supportsMeasurements = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
-            
             // Current satellite count and averages
             result.putInt("satellitesVisible", currentSatelliteCount)
             result.putInt("satellitesUsedInFix", satellitesUsedInFix)
@@ -130,8 +213,8 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             
             // Detailed satellite information
             val satelliteArray = WritableNativeArray()
-            satelliteDetails.forEach { satellite ->
-                satelliteArray.pushMap(satellite)
+            satelliteDataList.forEach { satellite ->
+                satelliteArray.pushMap(satellite.toWritableMap())
             }
             result.putArray("satellites", satelliteArray)
             
@@ -229,7 +312,7 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             // Clear cached data
             supportedConstellations.clear()
             detectedFrequencies.clear()
-            satelliteDetails.clear()
+            satelliteDataList.clear()
             currentSatelliteCount = 0
             satellitesUsedInFix = 0
             averageSignalToNoiseRatio = 0.0
@@ -256,7 +339,7 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
         currentSatelliteCount = status.satelliteCount
         satellitesUsedInFix = 0
         supportedConstellations.clear()
-        satelliteDetails.clear()
+        satelliteDataList.clear()
         
         // For calculating average signal-to-noise ratio
         val signalStrengths = mutableListOf<Float>()
@@ -270,42 +353,24 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
                 satellitesUsedInFix++
             }
             
-            // Collect signal strength for average calculation (API 24+)
-            if (supportsAdvancedGnssFeatures() && status.hasCn0DbHz(i)) {
-                signalStrengths.add(status.getCn0DbHz(i))
-            }
-            
             // Create detailed satellite info
-            val satelliteInfo = WritableNativeMap().apply {
-                putInt("svid", status.getSvid(i))
-                putInt("constellationType", constellation)
-                putString("constellationName", getConstellationName(constellation))
-                putBoolean("hasEphemeris", status.hasEphemerisData(i))
-                putBoolean("hasAlmanac", status.hasAlmanacData(i))
-                putBoolean("usedInFix", usedInFix)
-                
-                // Signal strength (C/N0) - API 24+
-                if (supportsAdvancedGnssFeatures() && status.hasCn0DbHz(i)) {
-                    putDouble("cn0DbHz", status.getCn0DbHz(i).toDouble())
-                }
-                
-                // Elevation angle - API 24+
-                if (supportsAdvancedGnssFeatures() && status.hasElevationDegrees(i)) {
-                    putDouble("elevation", status.getElevationDegrees(i).toDouble())
-                }
-                
-                // Azimuth angle - API 24+
-                if (supportsAdvancedGnssFeatures() && status.hasAzimuthDegrees(i)) {
-                    putDouble("azimuth", status.getAzimuthDegrees(i).toDouble())
-                }
-                
-                // Carrier frequency - API 26+
-                if (supportsCarrierFrequency() && status.hasCarrierFrequencyHz(i)) {
-                    putDouble("carrierFrequencyHz", status.getCarrierFrequencyHz(i).toDouble())
-                }
-            }
+            val satelliteInfo = SatelliteData(
+                status.getSvid(i),
+                constellation,
+                getConstellationName(constellation),
+                status.hasEphemerisData(i),
+                status.hasAlmanacData(i),
+                usedInFix,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && safeHasCn0DbHz(status, i)) safeGetCn0DbHz(status, i) else null,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && safeHasElevationDegrees(status, i)) safeGetElevationDegrees(status, i) else null,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && safeHasAzimuthDegrees(status, i)) safeGetAzimuthDegrees(status, i) else null,
+                if (supportsCarrierFrequency() && status.hasCarrierFrequencyHz(i)) status.getCarrierFrequencyHz(i).toDouble() else null
+            )
             
-            satelliteDetails.add(satelliteInfo)
+            satelliteDataList.add(satelliteInfo)
+            
+            // Add to signal strengths if available
+            satelliteInfo.cn0DbHz?.let { signalStrengths.add(it) }
         }
         
         // Calculate average signal-to-noise ratio
@@ -330,8 +395,8 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             
             // Include detailed satellite data in events
             val satelliteArray = WritableNativeArray()
-            satelliteDetails.forEach { satellite ->
-                satelliteArray.pushMap(satellite)
+            satelliteDataList.forEach { satellite ->
+                satelliteArray.pushMap(satellite.toWritableMap())
             }
             putArray("satellites", satelliteArray)
         }
@@ -405,5 +470,22 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
 
     private fun supportsCarrierFrequency(): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+    }
+
+    // Extension function to convert SatelliteData to WritableMap
+    private fun SatelliteData.toWritableMap(): WritableMap {
+        return WritableNativeMap().apply {
+            putInt("svid", svid)
+            putInt("constellationType", constellationType)
+            putString("constellationName", constellationName)
+            putBoolean("hasEphemeris", hasEphemeris)
+            putBoolean("hasAlmanac", hasAlmanac)
+            putBoolean("usedInFix", usedInFix)
+            
+            cn0DbHz?.let { putDouble("cn0DbHz", it.toDouble()) }
+            elevation?.let { putDouble("elevation", it.toDouble()) }
+            azimuth?.let { putDouble("azimuth", it.toDouble()) }
+            carrierFrequencyHz?.let { putDouble("carrierFrequencyHz", it) }
+        }
     }
 } 
