@@ -25,8 +25,11 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
     
     // Track current GNSS data
     private var currentSatelliteCount = 0
+    private var satellitesUsedInFix = 0
+    private var averageSignalToNoiseRatio = 0.0
     private val supportedConstellations = HashSet<Int>()
     private val detectedFrequencies = HashSet<Double>()
+    private val satelliteDetails = mutableListOf<WritableMap>()
     
     companion object {
         const val NAME = "GnssStatusChecker"
@@ -41,10 +44,24 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
         const val CONSTELLATION_GALILEO = 6
         const val CONSTELLATION_IRNSS = 7 // NavIC
         
-        // Carrier frequency ranges (MHz)
-        const val GPS_L1_FREQ = 1575.42
-        const val GPS_L5_FREQ = 1176.45
+        // Enhanced dual-frequency detection based on Sean Barbeau's research
+        // Source: https://barbeau.medium.com/dual-frequency-gnss-on-android-devices-152b8826e1c
         const val FREQ_TOLERANCE = 10.0 // MHz tolerance for frequency detection
+        
+        // Dual-frequency bands (frequencies that indicate dual-frequency capability)
+        val DUAL_FREQUENCY_BANDS = mapOf(
+            1176.45 to "L5/E5a/B2a", // GPS L5, Galileo E5a, BeiDou B2a, QZSS L5, NavIC L5, SBAS L5
+            1227.6 to "L2", // GPS L2, QZSS L2
+            1207.14 to "E5b/B2", // Galileo E5b, BeiDou B2
+            1268.52 to "B3", // BeiDou B3
+            1278.75 to "E6/LEX", // Galileo E6, QZSS LEX
+            1191.795 to "E5", // Galileo E5
+            2492.028 to "S", // NavIC S-band
+        )
+        
+        // GLONASS L2 range (dual-frequency)
+        const val GLONASS_L2_MIN = 1242.9375
+        const val GLONASS_L2_MAX = 1248.625
     }
 
     override fun getName(): String {
@@ -81,8 +98,10 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             // Check if device supports GNSS measurements (API 24+)
             val supportsMeasurements = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
             
-            // Current satellite count
+            // Current satellite count and averages
             result.putInt("satellitesVisible", currentSatelliteCount)
+            result.putInt("satellitesUsedInFix", satellitesUsedInFix)
+            result.putDouble("averageSignalToNoiseRatio", averageSignalToNoiseRatio)
             
             // Supported constellations
             val constellationArray = WritableNativeArray()
@@ -98,9 +117,21 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             }
             result.putArray("carrierFrequencies", frequencyArray)
             
-            // Check for dual-frequency support (L5 band ~1176 MHz)
+            // Detailed satellite information
+            val satelliteArray = WritableNativeArray()
+            satelliteDetails.forEach { satellite ->
+                satelliteArray.pushMap(satellite)
+            }
+            result.putArray("satellites", satelliteArray)
+            
+            // Check for dual-frequency support - enhanced detection
             val isDualFrequencySupported = detectedFrequencies.any { freq ->
-                abs(freq - GPS_L5_FREQ) <= FREQ_TOLERANCE
+                // Check specific dual-frequency bands
+                DUAL_FREQUENCY_BANDS.keys.any { dualFreq ->
+                    abs(freq - dualFreq) <= FREQ_TOLERANCE
+                } || 
+                // Check GLONASS L2 range
+                (freq >= GLONASS_L2_MIN - FREQ_TOLERANCE && freq <= GLONASS_L2_MAX + FREQ_TOLERANCE)
             }
             result.putBoolean("isDualFrequencySupported", isDualFrequencySupported)
             
@@ -187,7 +218,10 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             // Clear cached data
             supportedConstellations.clear()
             detectedFrequencies.clear()
+            satelliteDetails.clear()
             currentSatelliteCount = 0
+            satellitesUsedInFix = 0
+            averageSignalToNoiseRatio = 0.0
             
             promise.resolve(null)
         } catch (e: Exception) {
@@ -209,16 +243,72 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
 
     private fun updateSatelliteStatus(status: GnssStatus) {
         currentSatelliteCount = status.satelliteCount
+        satellitesUsedInFix = 0
         supportedConstellations.clear()
+        satelliteDetails.clear()
+        
+        // For calculating average signal-to-noise ratio
+        val signalStrengths = mutableListOf<Float>()
         
         for (i in 0 until status.satelliteCount) {
             val constellation = status.getConstellationType(i)
             supportedConstellations.add(constellation)
+            
+            val usedInFix = status.usedInFix(i)
+            if (usedInFix) {
+                satellitesUsedInFix++
+            }
+            
+            // Collect signal strength for average calculation
+            if (status.hasCn0DbHz(i)) {
+                signalStrengths.add(status.getCn0DbHz(i))
+            }
+            
+            // Create detailed satellite info
+            val satelliteInfo = WritableNativeMap().apply {
+                putInt("svid", status.getSvid(i))
+                putInt("constellationType", constellation)
+                putString("constellationName", getConstellationName(constellation))
+                putBoolean("hasEphemeris", status.hasEphemerisData(i))
+                putBoolean("hasAlmanac", status.hasAlmanacData(i))
+                putBoolean("usedInFix", usedInFix)
+                
+                // Signal strength (C/N0)
+                if (status.hasCn0DbHz(i)) {
+                    putDouble("cn0DbHz", status.getCn0DbHz(i).toDouble())
+                }
+                
+                // Elevation angle
+                if (status.hasElevationDegrees(i)) {
+                    putDouble("elevation", status.getElevationDegrees(i).toDouble())
+                }
+                
+                // Azimuth angle
+                if (status.hasAzimuthDegrees(i)) {
+                    putDouble("azimuth", status.getAzimuthDegrees(i).toDouble())
+                }
+                
+                // Carrier frequency (API 26+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && status.hasCarrierFrequencyHz(i)) {
+                    putDouble("carrierFrequencyHz", status.getCarrierFrequencyHz(i).toDouble())
+                }
+            }
+            
+            satelliteDetails.add(satelliteInfo)
+        }
+        
+        // Calculate average signal-to-noise ratio
+        averageSignalToNoiseRatio = if (signalStrengths.isNotEmpty()) {
+            signalStrengths.average()
+        } else {
+            0.0
         }
         
         // Send updated status via event
         val eventData = WritableNativeMap().apply {
             putInt("satellitesVisible", currentSatelliteCount)
+            putInt("satellitesUsedInFix", satellitesUsedInFix)
+            putDouble("averageSignalToNoiseRatio", averageSignalToNoiseRatio)
             
             val constellationArray = WritableNativeArray()
             supportedConstellations.forEach { constellation ->
@@ -226,6 +316,13 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             }
             putArray("supportedConstellations", constellationArray)
             putBoolean("isNavICSupported", supportedConstellations.contains(CONSTELLATION_IRNSS))
+            
+            // Include detailed satellite data in events
+            val satelliteArray = WritableNativeArray()
+            satelliteDetails.forEach { satellite ->
+                satelliteArray.pushMap(satellite)
+            }
+            putArray("satellites", satelliteArray)
         }
         
         sendEvent("onSatelliteStatusChanged", eventData)
@@ -253,8 +350,14 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
                 }
                 putArray("carrierFrequencies", frequencyArray)
                 
+                // Enhanced dual-frequency detection
                 val isDualFrequencySupported = detectedFrequencies.any { freq ->
-                    abs(freq - GPS_L5_FREQ) <= FREQ_TOLERANCE
+                    // Check specific dual-frequency bands
+                    DUAL_FREQUENCY_BANDS.keys.any { dualFreq ->
+                        abs(freq - dualFreq) <= FREQ_TOLERANCE
+                    } || 
+                    // Check GLONASS L2 range
+                    (freq >= GLONASS_L2_MIN - FREQ_TOLERANCE && freq <= GLONASS_L2_MAX + FREQ_TOLERANCE)
                 }
                 putBoolean("isDualFrequencySupported", isDualFrequencySupported)
             }

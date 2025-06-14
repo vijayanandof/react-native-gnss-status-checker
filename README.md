@@ -8,8 +8,12 @@ A React Native module to check GNSS status and satellite information on Android,
 - ✅ **Dual-Frequency GPS**: Detect L5 band support (~1176 MHz)
 - ✅ **NavIC Support**: Detect Indian Regional Navigation Satellite System (IRNSS)
 - ✅ **Satellite Monitoring**: Real-time satellite visibility tracking
+- ✅ **Detailed Satellite Information**: Individual satellite data including PRN, signal strength, elevation, azimuth
 - ✅ **Multiple Constellations**: Support for GPS, GLONASS, Galileo, BeiDou, QZSS, SBAS
-- ✅ **Carrier Frequency Detection**: Monitor different GNSS frequencies
+- ✅ **Enhanced Frequency Detection**: Comprehensive carrier frequency mapping based on research
+- ✅ **Dual-Frequency Detection**: Advanced detection for all GNSS constellations (L2, L5, E5a, E5b, B2a, etc.)
+- ✅ **Frequency Band Identification**: Identify specific frequency bands for each detected carrier
+- ✅ **Satellite Analytics**: Helper functions for filtering and analyzing satellite data
 - ✅ **TypeScript Support**: Full TypeScript definitions included
 
 ## Requirements
@@ -100,8 +104,11 @@ const checkGnssStatus = async () => {
     //   isDualFrequencySupported: true,
     //   isNavICSupported: false,
     //   satellitesVisible: 12,
+    //   satellitesUsedInFix: 8,
+    //   averageSignalToNoiseRatio: 28.5,
     //   supportedConstellations: ['GPS', 'GLONASS', 'GALILEO'],
-    //   carrierFrequencies: [1575.42, 1176.45]
+    //   carrierFrequencies: [1575.42, 1176.45],
+    //   satellites: [/* detailed satellite info */]
     // }
   } catch (error) {
     console.error('Error getting GNSS status:', error);
@@ -221,6 +228,160 @@ const GnssStatusComponent = () => {
 };
 ```
 
+### Enhanced Satellite Information
+
+```typescript
+import { 
+  getSatellitesByConstellation,
+  getSatellitesUsedInFix,
+  getSatellitesWithGoodSignal,
+  getSatelliteStatistics,
+  GnssConstellations,
+  SatelliteInfo
+} from 'react-native-gnss-status-checker';
+
+const analyzeSatellites = async () => {
+  try {
+    const status = await getGNSSStatus();
+    
+    // Get detailed satellite information
+    console.log('All satellites:', status.satellites);
+    
+    // Filter satellites by constellation
+    const gpsSatellites = getSatellitesByConstellation(status.satellites, GnssConstellations.GPS);
+    const glonassSatellites = getSatellitesByConstellation(status.satellites, GnssConstellations.GLONASS);
+    
+    // Get satellites used in position fix
+    const fixSatellites = getSatellitesUsedInFix(status.satellites);
+    console.log('Satellites used in fix:', fixSatellites.length);
+    
+    // Get satellites with good signal strength (>= 20 dB-Hz)
+    const goodSignalSats = getSatellitesWithGoodSignal(status.satellites, 20);
+    console.log('Satellites with good signal:', goodSignalSats.length);
+    
+    // Get comprehensive statistics
+    const stats = getSatelliteStatistics(status.satellites);
+    console.log('Satellite statistics:', {
+      total: stats.total,
+      usedInFix: stats.usedInFix,
+      averageSignalStrength: stats.averageSignalStrength,
+      strongestSignal: stats.strongestSignal,
+      byConstellation: stats.byConstellation
+    });
+    
+    // Access individual satellite details
+    status.satellites.forEach((satellite: SatelliteInfo) => {
+      console.log(`${satellite.constellationName} ${satellite.svid}:`, {
+        signalStrength: satellite.cn0DbHz,
+        elevation: satellite.elevation,
+        azimuth: satellite.azimuth,
+        usedInFix: satellite.usedInFix,
+        hasEphemeris: satellite.hasEphemeris
+      });
+    });
+    
+  } catch (error) {
+    console.error('Error analyzing satellites:', error);
+  }
+};
+```
+
+### Satellite Data Structure
+
+Each satellite in the `satellites` array contains:
+
+```typescript
+interface SatelliteInfo {
+  svid: number;                    // Satellite Vehicle ID (PRN for GPS)
+  constellationType: number;       // Constellation type constant
+  constellationName: string;       // Human-readable constellation name
+  cn0DbHz?: number;               // Signal strength in dB-Hz
+  elevation?: number;             // Elevation angle in degrees
+  azimuth?: number;               // Azimuth angle in degrees
+  hasEphemeris: boolean;          // Has ephemeris data
+  hasAlmanac: boolean;            // Has almanac data
+  usedInFix: boolean;             // Used in position calculation
+  carrierFrequencyHz?: number;    // Carrier frequency in Hz (API 26+)
+}
+```
+
+### Helper Functions
+
+- `getSatellitesByConstellation(satellites, constellationType)` - Filter satellites by constellation
+- `getSatellitesUsedInFix(satellites)` - Get satellites used in position fix
+- `getSatellitesWithGoodSignal(satellites, minCn0)` - Filter by signal strength
+- `getSatelliteStatistics(satellites)` - Get comprehensive satellite statistics
+
+### Enhanced Frequency Band Analysis
+
+```typescript
+import { 
+  identifyFrequencyBand,
+  getFrequencyBandInfo,
+  FrequencyBandInfo,
+  CarrierFrequencies
+} from 'react-native-gnss-status-checker';
+
+const analyzeFrequencies = async () => {
+  try {
+    const status = await getGNSSStatus();
+    
+    // Get detailed frequency band information
+    const frequencyBands = getFrequencyBandInfo(status.carrierFrequencies);
+    
+    frequencyBands.forEach((bandInfo: FrequencyBandInfo) => {
+      console.log(`Frequency: ${bandInfo.frequency} MHz`);
+      console.log(`Constellation: ${bandInfo.constellation}`);
+      console.log(`Band: ${bandInfo.band}`);
+      console.log(`Dual-Frequency: ${bandInfo.isDualFrequency}`);
+    });
+    
+    // Identify a specific frequency
+    const bandInfo = identifyFrequencyBand(1176.45); // GPS L5
+    console.log('1176.45 MHz is:', bandInfo); 
+    // Output: { frequency: 1176.45, constellation: 'GPS', band: 'L5', isDualFrequency: true }
+    
+    // Check for dual-frequency capability with enhanced detection
+    console.log('Dual-frequency supported:', status.isDualFrequencySupported);
+    // Now detects L2, L5, E5a, E5b, B2a, B3, E6, LEX, S-band, and GLONASS L2
+    
+  } catch (error) {
+    console.error('Error analyzing frequencies:', error);
+  }
+};
+```
+
+### Comprehensive Frequency Mapping
+
+The library now includes comprehensive frequency mapping based on [Sean Barbeau's research](https://barbeau.medium.com/dual-frequency-gnss-on-android-devices-152b8826e1c):
+
+```typescript
+// GPS frequencies
+CarrierFrequencies.GPS_L1    // 1575.42 MHz
+CarrierFrequencies.GPS_L2    // 1227.6 MHz  (dual-frequency)
+CarrierFrequencies.GPS_L5    // 1176.45 MHz (dual-frequency)
+
+// Galileo frequencies  
+CarrierFrequencies.GALILEO_E1   // 1575.42 MHz
+CarrierFrequencies.GALILEO_E5a  // 1176.45 MHz (dual-frequency)
+CarrierFrequencies.GALILEO_E5b  // 1207.14 MHz (dual-frequency)
+
+// BeiDou frequencies
+CarrierFrequencies.BEIDOU_B1    // 1561.098 MHz
+CarrierFrequencies.BEIDOU_B2a   // 1176.45 MHz (dual-frequency)
+CarrierFrequencies.BEIDOU_B3    // 1268.52 MHz (dual-frequency)
+
+// NavIC frequencies
+CarrierFrequencies.NAVIC_L5     // 1176.45 MHz (dual-frequency)
+CarrierFrequencies.NAVIC_S      // 2492.028 MHz (dual-frequency)
+
+// GLONASS frequencies (with ranges)
+CarrierFrequencies.GLONASS_L1_MIN  // 1598.0625 MHz
+CarrierFrequencies.GLONASS_L1_MAX  // 1605.375 MHz
+CarrierFrequencies.GLONASS_L2_MIN  // 1242.9375 MHz (dual-frequency)
+CarrierFrequencies.GLONASS_L2_MAX  // 1248.625 MHz (dual-frequency)
+```
+
 ## API Reference
 
 ### Methods
@@ -253,8 +414,11 @@ interface GnssStatusResult {
   isDualFrequencySupported: boolean;  // Whether dual-frequency (L5) is detected
   isNavICSupported: boolean;          // Whether NavIC (IRNSS) is supported
   satellitesVisible: number;          // Number of visible satellites
+  satellitesUsedInFix: number;        // Number of satellites used in position fix
+  averageSignalToNoiseRatio: number;  // Average signal-to-noise ratio
   supportedConstellations: string[];  // Array of constellation names
   carrierFrequencies: number[];       // Array of detected frequencies (MHz)
+  satellites: SatelliteInfo[];         // Array of satellite information
 }
 ```
 

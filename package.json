@@ -39,7 +39,10 @@
     "dual-frequency",
     "location"
   ],
-  "repository": "https://github.com/vijayanandof/react-native-gnss-status-checker",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vijayanandof/react-native-gnss-status-checker.git"
+  },
   "author": "Your Name <your.email@example.com> (https://github.com/vijayanandof)",
   "license": "MIT",
   "bugs": {
@@ -117,7 +120,8 @@
   },
   "eslintIgnore": [
     "node_modules/",
-    "lib/"
+    "lib/",
+    "react-native.config.js"
   ],
   "prettier": {
     "quoteProps": "consistent",
@@ -142,5 +146,9 @@
   },
   "dependencies": {
     "@release-it/conventional-changelog": "^10.0.1"
+  },
+  "directories": {
+    "example": "example",
+    "lib": "lib"
   }
 }
