@@ -19,9 +19,37 @@ A React Native module to check GNSS status and satellite information on Android,
 ## Requirements
 
 - React Native 0.60+
-- Android API Level 24+ (Android 7.0)
+- Android API Level 24+ (Android 7.0) for full GNSS features
+  - API 21+ (Android 5.0) for basic satellite count and constellation support
+  - API 24+ (Android 7.0) for signal strength, elevation, and azimuth data
+  - API 26+ (Android 8.0) for carrier frequency detection
 - Android device with GNSS support
 - Location permissions
+
+### API Level Compatibility
+
+The library gracefully handles different Android API levels:
+
+| Feature | Minimum API Level | Android Version |
+|---------|------------------|-----------------|
+| Basic satellite count | 21 | Android 5.0 |
+| Constellation detection | 21 | Android 5.0 |
+| Signal strength (C/N0) | 24 | Android 7.0 |
+| Elevation/Azimuth angles | 24 | Android 7.0 |
+| Carrier frequency detection | 26 | Android 8.0 |
+| GNSS measurements | 24 | Android 7.0 |
+
+You can check feature availability at runtime:
+
+```typescript
+import { getGNSSStatus } from 'react-native-gnss-status-checker';
+
+const status = await getGNSSStatus();
+// Check available features based on your device's Android version
+console.log('API Level:', status.apiLevel);
+console.log('Supports C/N0:', status.supportsCn0);
+console.log('Supports Carrier Freq:', status.supportsCarrierFreq);
+```
 
 ## Installation
 
@@ -519,6 +547,66 @@ const requestLocationPermission = async () => {
    - Requires compatible GNSS chipset
    - May take time to acquire NavIC satellites
 
+### Compilation Issues
+
+#### **JVM Target Compatibility**
+If you encounter JVM target mismatch errors:
+
+```
+FAILURE: Build failed with an exception.
+* What went wrong:
+Execution failed for task ':react-native-gnss-status-checker:compileDebugKotlin'.
+> 'compileDebugJavaWithJavac' task (current target is 11) and 'compileDebugKotlin' task (current target is 17) jvm target compatibility should be set to the same Java version.
+```
+
+**Solution:** Ensure your project's `android/build.gradle` has matching JVM targets:
+
+```gradle
+android {
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_11
+    targetCompatibility JavaVersion.VERSION_11
+  }
+  
+  kotlinOptions {
+    jvmTarget = "11"
+  }
+}
+```
+
+#### **API Level Errors**
+If you encounter missing method errors like `hasCn0DbHz()`:
+
+```
+error: cannot find symbol method hasCn0DbHz(int)
+```
+
+**Solution:** The library handles this automatically with API level checks. Ensure your `compileSdkVersion` is 33 or higher:
+
+```gradle
+android {
+  compileSdkVersion 33
+  defaultConfig {
+    minSdkVersion 21  // Minimum supported
+    targetSdkVersion 33
+  }
+}
+```
+
+#### **Kotlin Version Conflicts**
+If you encounter Kotlin version conflicts:
+
+**Solution:** Add to your project's `android/build.gradle`:
+
+```gradle
+buildscript {
+  ext.kotlin_version = '1.7.10'
+  dependencies {
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+  }
+}
+```
+
 ### Testing
 
 Test the module on a physical Android device with:
@@ -526,6 +614,30 @@ Test the module on a physical Android device with:
 - API Level 24+ (preferably 26+ for full features)
 - GNSS-capable hardware
 - Location services enabled
+
+### Debug Information
+
+You can check your device's capabilities at runtime:
+
+```typescript
+import { getGNSSStatus } from 'react-native-gnss-status-checker';
+
+const debugInfo = async () => {
+  try {
+    const status = await getGNSSStatus();
+    console.log('=== GNSS Debug Info ===');
+    console.log('API Level:', status.apiLevel);
+    console.log('Supports C/N0:', status.supportsCn0);
+    console.log('Supports Carrier Freq:', status.supportsCarrierFreq);
+    console.log('GNSS Supported:', status.isGNSSSupported);
+    console.log('Satellites Visible:', status.satellitesVisible);
+    console.log('Dual-Frequency:', status.isDualFrequencySupported);
+    console.log('NavIC Supported:', status.isNavICSupported);
+  } catch (error) {
+    console.error('GNSS Error:', error);
+  }
+};
+```
 
 ## Platform Support
 

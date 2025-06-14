@@ -62,6 +62,9 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
         // GLONASS L2 range (dual-frequency)
         const val GLONASS_L2_MIN = 1242.9375
         const val GLONASS_L2_MAX = 1248.625
+        
+        // GPS L5 frequency constant for backward compatibility
+        const val GPS_L5_FREQUENCY = 1176.45
     }
 
     override fun getName(): String {
@@ -77,7 +80,10 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             "CONSTELLATION_QZSS" to CONSTELLATION_QZSS,
             "CONSTELLATION_BEIDOU" to CONSTELLATION_BEIDOU,
             "CONSTELLATION_GALILEO" to CONSTELLATION_GALILEO,
-            "CONSTELLATION_IRNSS" to CONSTELLATION_IRNSS
+            "CONSTELLATION_IRNSS" to CONSTELLATION_IRNSS,
+            "API_LEVEL" to Build.VERSION.SDK_INT,
+            "SUPPORTS_CN0" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N),
+            "SUPPORTS_CARRIER_FREQ" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
         )
     }
 
@@ -102,6 +108,11 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
             result.putInt("satellitesVisible", currentSatelliteCount)
             result.putInt("satellitesUsedInFix", satellitesUsedInFix)
             result.putDouble("averageSignalToNoiseRatio", averageSignalToNoiseRatio)
+            
+            // API level compatibility information
+            result.putInt("apiLevel", Build.VERSION.SDK_INT)
+            result.putBoolean("supportsCn0", supportsAdvancedGnssFeatures())
+            result.putBoolean("supportsCarrierFreq", supportsCarrierFrequency())
             
             // Supported constellations
             val constellationArray = WritableNativeArray()
@@ -231,7 +242,7 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
 
     @ReactMethod
     fun getConstantExample(): Double {
-        return GPS_L5_FREQ
+        return GPS_L5_FREQUENCY // GPS L5 frequency in MHz
     }
 
     private fun hasLocationPermission(): Boolean {
@@ -259,8 +270,8 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
                 satellitesUsedInFix++
             }
             
-            // Collect signal strength for average calculation
-            if (status.hasCn0DbHz(i)) {
+            // Collect signal strength for average calculation (API 24+)
+            if (supportsAdvancedGnssFeatures() && status.hasCn0DbHz(i)) {
                 signalStrengths.add(status.getCn0DbHz(i))
             }
             
@@ -273,23 +284,23 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
                 putBoolean("hasAlmanac", status.hasAlmanacData(i))
                 putBoolean("usedInFix", usedInFix)
                 
-                // Signal strength (C/N0)
-                if (status.hasCn0DbHz(i)) {
+                // Signal strength (C/N0) - API 24+
+                if (supportsAdvancedGnssFeatures() && status.hasCn0DbHz(i)) {
                     putDouble("cn0DbHz", status.getCn0DbHz(i).toDouble())
                 }
                 
-                // Elevation angle
-                if (status.hasElevationDegrees(i)) {
+                // Elevation angle - API 24+
+                if (supportsAdvancedGnssFeatures() && status.hasElevationDegrees(i)) {
                     putDouble("elevation", status.getElevationDegrees(i).toDouble())
                 }
                 
-                // Azimuth angle
-                if (status.hasAzimuthDegrees(i)) {
+                // Azimuth angle - API 24+
+                if (supportsAdvancedGnssFeatures() && status.hasAzimuthDegrees(i)) {
                     putDouble("azimuth", status.getAzimuthDegrees(i).toDouble())
                 }
                 
-                // Carrier frequency (API 26+)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && status.hasCarrierFrequencyHz(i)) {
+                // Carrier frequency - API 26+
+                if (supportsCarrierFrequency() && status.hasCarrierFrequencyHz(i)) {
                     putDouble("carrierFrequencyHz", status.getCarrierFrequencyHz(i).toDouble())
                 }
             }
@@ -383,5 +394,16 @@ class GnssStatusCheckerModule(reactContext: ReactApplicationContext) : ReactCont
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(eventName, params)
+    }
+
+    /**
+     * Check if specific GNSS features are available based on API level
+     */
+    private fun supportsAdvancedGnssFeatures(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+    }
+
+    private fun supportsCarrierFrequency(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
     }
 } 

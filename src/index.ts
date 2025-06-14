@@ -40,6 +40,10 @@ export interface GnssStatusResult {
   carrierFrequencies: number[];
   frequencyBands: FrequencyBandInfo[]; // Detailed frequency band information
   satellites: SatelliteInfo[]; // Detailed satellite information
+  // API level compatibility information
+  apiLevel?: number; // Android API level
+  supportsCn0?: boolean; // Supports signal strength measurements
+  supportsCarrierFreq?: boolean; // Supports carrier frequency detection
 }
 
 // Define constellation constants that match Android's GnssStatus
