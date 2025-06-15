@@ -26,6 +26,46 @@ A React Native module to check GNSS status and satellite information on Android,
 
 </div>
 
+## 📱 Complete Sample Application
+
+<div align="center">
+
+### 🚀 [GnssTestApp - Full Implementation Example](https://github.com/vijayanandof/GnssTestApp)
+
+[![Sample App](https://img.shields.io/badge/📱_Sample_App-GnssTestApp-28a745?style=for-the-badge&logo=github)](https://github.com/vijayanandof/GnssTestApp)
+[![React Native](https://img.shields.io/badge/React_Native-Ready_to_Run-61DAFB?style=for-the-badge&logo=react)](https://github.com/vijayanandof/GnssTestApp)
+[![Full Featured](https://img.shields.io/badge/🛰️_Features-All_Implemented-orange?style=for-the-badge)](https://github.com/vijayanandof/GnssTestApp)
+
+</div>
+
+### 🌟 What's Inside the Sample App
+
+| Testing Mode | Features | Highlights |
+|--------------|----------|------------|
+| 🧪 **Basic Status** | GNSS capability check | API compatibility, constellation support |
+| 🔬 **Satellite Analysis** | 15+ helper functions | Per-constellation breakdown, signal quality |
+| 📻 **Frequency Analysis** | Research-based mapping | Sean Barbeau's frequency detection |
+| 📡 **Real-time Status** | Live monitoring | React hooks, event-driven updates |
+
+### 🎯 Key Implementations Showcased
+
+- ✅ **Complete React Hook Integration** - `useGnssStatus` pattern
+- ✅ **All Helper Functions** - Filtering, statistics, analysis
+- ✅ **Real-time Event Handling** - `DeviceEventEmitter` usage  
+- ✅ **TypeScript Best Practices** - Full type safety
+- ✅ **4 Testing Modes** - Basic to advanced analysis
+- ✅ **Modern UI/UX** - Professional React Native interface
+
+```bash
+# Clone and run the complete sample
+git clone https://github.com/vijayanandof/GnssTestApp.git
+cd GnssTestApp
+npm install
+npx react-native run-android
+```
+
+> 💡 **Perfect Starting Point**: Use this as your base implementation or reference for integrating GNSS features into your own app!
+
 ## 🛰️ Supported Constellations
 
 | Constellation | Primary Freq | Dual-Freq Support | Regional Coverage |
@@ -40,6 +80,7 @@ A React Native module to check GNSS status and satellite information on Android,
 ## 📋 Table of Contents
 
 - [🎬 Demo](#-demo)
+- [📱 Complete Sample Application](#-complete-sample-application)
 - [🛰️ Supported Constellations](#️-supported-constellations)
 - [🌟 Features](#-features)
 - [💖 Support the Project](#-support-the-project)
