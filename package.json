@@ -1,6 +1,6 @@
 {
   "name": "react-native-gnss-status-checker",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "React Native module to check GNSS status and satellite info (NavIC, dual-frequency GPS) on Android",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
