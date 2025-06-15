@@ -18,9 +18,11 @@ A React Native module to check GNSS status and satellite information on Android,
 
 <div align="center">
 
-![Demo GIF](https://via.placeholder.com/400x600/1f1f1f/ffffff?text=GNSS+Demo+GIF+Coming+Soon)
+[![GNSS Demo Video](https://img.youtube.com/vi/4Tt8_cUEmNY/0.jpg)](https://youtube.com/shorts/4Tt8_cUEmNY?si=MsYwZAyRC4PwHmAk)
 
-*Real-time GNSS satellite tracking and dual-frequency detection*
+*Click to watch: Real-time GNSS satellite tracking and dual-frequency detection*
+
+[🎥 Watch Demo on YouTube](https://youtube.com/shorts/4Tt8_cUEmNY?si=MsYwZAyRC4PwHmAk)
 
 </div>
 
